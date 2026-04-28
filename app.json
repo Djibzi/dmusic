@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "DMusic",
+    "slug": "dmusic",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "dmusic",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.dmusic.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"],
+        "NSAppleMusicUsageDescription": "DMusic accède à ta bibliothèque Apple Music locale pour lire tes morceaux téléchargés.",
+        "NSDocumentsFolderUsageDescription": "DMusic lit les fichiers audio que tu importes."
+      }
+    },
+    "android": {
+      "package": "com.dmusic.app"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-av",
+      "expo-media-library",
+      "expo-document-picker"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

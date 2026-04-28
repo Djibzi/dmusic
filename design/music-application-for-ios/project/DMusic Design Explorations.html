@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMusic — Crimson Night & Violet Dusk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #ece4f3; overflow: hidden; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="components/ios-frame.jsx"></script>
+<script type="text/babel" src="components/design-canvas.jsx"></script>
+<script type="text/babel" src="components/direction-b-deep.jsx"></script>
+<script type="text/babel" src="components/direction-b-extra.jsx"></script>
+
+<script type="text/babel">
+function Phone({ children, dark = false, label }) {
+  return (
+    <div data-screen-label={label}>
+      <IOSDevice dark={dark}>{children}</IOSDevice>
+    </div>
+  );
+}
+
+function Swatch({ palette }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: palette.bg, border: '1px solid rgba(0,0,0,0.1)' }}/>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: palette.accent }}/>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: palette.accent2 }}/>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: palette.accent3 }}/>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: palette.ink }}/>
+      <div style={{ width: 18, height: 18, borderRadius: 5, background: palette.bgDark, border: '1px solid rgba(0,0,0,0.1)' }}/>
+    </div>
+  );
+}
+
+function Header() {
+  return (
+    <div style={{ padding: '40px 60px 10px' }}>
+      <div style={{
+        fontFamily: '"Instrument Serif", serif', fontSize: 64, fontStyle: 'italic',
+        lineHeight: 1, color: '#1a0a22', letterSpacing: -1.5,
+      }}>DMusic — final two.</div>
+      <div style={{
+        fontFamily: '"JetBrains Mono", monospace', fontSize: 12,
+        color: 'rgba(60,40,80,0.65)', letterSpacing: 1.5, marginTop: 12,
+      }}>
+        CRIMSON NIGHT · VIOLET DUSK · LIBRARY · PLAYER · LINKS · MINI · LIGHT + DARK
+      </div>
+    </div>
+  );
+}
+
+function PaletteSection({ palette }) {
+  const P = palette;
+  return (
+    <DCSection
+      title={`B · ${P.name}`}
+      subtitle={null}
+    >
+      {/* Palette card */}
+      <div style={{ width: 360, paddingTop: 24 }}>
+        <div style={{
+          fontFamily: '"Archivo Black", sans-serif', fontSize: 36, letterSpacing: -1.5,
+          textTransform: 'uppercase', lineHeight: 0.95, color: '#1a0a22',
+        }}>{P.name}</div>
+        <Swatch palette={P}/>
+        <div style={{
+          marginTop: 18,
+          fontFamily: '"JetBrains Mono", monospace', fontSize: 10.5,
+          color: 'rgba(40,20,60,0.75)', lineHeight: 1.75,
+        }}>
+          bg&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{P.bg}<br/>
+          bgDark&nbsp;{P.bgDark}<br/>
+          accent&nbsp;{P.accent}<br/>
+          tag2&nbsp;&nbsp;&nbsp;{P.accent2}<br/>
+          tag3&nbsp;&nbsp;&nbsp;{P.accent3}<br/>
+          ink&nbsp;&nbsp;&nbsp;&nbsp;{P.ink}
+        </div>
+        <div style={{
+          marginTop: 20, fontFamily: 'Inter, sans-serif', fontSize: 12,
+          color: 'rgba(40,20,60,0.7)', lineHeight: 1.6, maxWidth: 320,
+        }}>
+          13 écrans × light + dark. Full flow de l'app : onboarding → import → library → player → queue → playlists → search → links → settings → lock screen.
+        </div>
+      </div>
+
+      {/* ONBOARDING (3 steps) */}
+      <DCArtboard label={`${P.name} · Onboarding 1`}>
+        <Phone label={`${P.name}-Onb1`}><Onboarding palette={P} step={1}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Onboarding 2`}>
+        <Phone label={`${P.name}-Onb2`}><Onboarding palette={P} step={2}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Onboarding 3`}>
+        <Phone label={`${P.name}-Onb3`}><Onboarding palette={P} step={3}/></Phone>
+      </DCArtboard>
+
+      {/* LIGHT row */}
+      <DCArtboard label={`${P.name} · Library`}>
+        <Phone label={`${P.name}-Library-L`}><Library palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Import`}>
+        <Phone label={`${P.name}-Import-L`}><ImportScreen palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Search`}>
+        <Phone label={`${P.name}-Search-L`}><SearchScreen palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Playlists`}>
+        <Phone label={`${P.name}-PL-L`}><PlaylistsScreen palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Playlist Detail`}>
+        <Phone label={`${P.name}-PLD-L`}><PlaylistDetail palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Player`}>
+        <Phone label={`${P.name}-Player-L`}><Player palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Queue`}>
+        <Phone label={`${P.name}-Queue-L`}><QueueScreen palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Links`}>
+        <Phone label={`${P.name}-Links-L`}><LinksScreen palette={P} dark={false}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Settings`}>
+        <Phone label={`${P.name}-Set-L`}><SettingsScreen palette={P} dark={false}/></Phone>
+      </DCArtboard>
+
+      {/* DARK row */}
+      <DCArtboard label={`${P.name} · Library (dark)`}>
+        <Phone dark label={`${P.name}-Library-D`}><Library palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Import (dark)`}>
+        <Phone dark label={`${P.name}-Import-D`}><ImportScreen palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Search (dark)`}>
+        <Phone dark label={`${P.name}-Search-D`}><SearchScreen palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Playlists (dark)`}>
+        <Phone dark label={`${P.name}-PL-D`}><PlaylistsScreen palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Playlist Detail (dark)`}>
+        <Phone dark label={`${P.name}-PLD-D`}><PlaylistDetail palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Player (dark)`}>
+        <Phone dark label={`${P.name}-Player-D`}><Player palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Queue (dark)`}>
+        <Phone dark label={`${P.name}-Queue-D`}><QueueScreen palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Links (dark)`}>
+        <Phone dark label={`${P.name}-Links-D`}><LinksScreen palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Settings (dark)`}>
+        <Phone dark label={`${P.name}-Set-D`}><SettingsScreen palette={P} dark={true}/></Phone>
+      </DCArtboard>
+      <DCArtboard label={`${P.name} · Lock Screen`}>
+        <Phone dark label={`${P.name}-Lock`}><LockScreen palette={P}/></Phone>
+      </DCArtboard>
+    </DCSection>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <Header/>
+      <PaletteSection palette={BD_PALETTES.crimsonNight}/>
+      <PaletteSection palette={BD_PALETTES.violetDusk}/>
+
+      <div style={{ padding: '20px 60px 80px', maxWidth: 900, fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div style={{
+          fontFamily: '"Instrument Serif", serif', fontSize: 32, fontStyle: 'italic',
+          color: '#1a0a22', letterSpacing: -0.5,
+        }}>Notes de design</div>
+        <ul style={{
+          marginTop: 12, fontSize: 14, color: 'rgba(40,20,60,0.85)',
+          lineHeight: 1.7, paddingLeft: 20,
+        }}>
+          <li><b>Player</b> : cover centrale avec peek des covers précédente/suivante pour indiquer le swipe, waveform en barres comme progress bar, ambient glow accent derrière.</li>
+          <li><b>Links</b> : champ URL en pointillés accent, badges de compatibilité (DRM barré), historique avec badge "DRM" rouge pour les liens invalides.</li>
+          <li><b>Library</b> : numérotation mono, chips de filtres (All/Tracks/Albums/Artists/Links), carte Now Playing proéminente.</li>
+          <li><b>Glass</b> : mini-player + tab bar en blur 24px, présents sur library et links.</li>
+          <li><b>Typo</b> : Archivo Black en display uppercase, Instrument Serif italic pour contraste chaud (titres d'écran, albums), Inter pour UI, JetBrains Mono pour meta.</li>
+        </ul>
+        <div style={{ marginTop: 24, fontSize: 14, color: 'rgba(40,20,60,0.7)' }}>
+          → Dis-moi laquelle tu gardes au final, ou des tweaks spécifiques (typo, taille cover, layout controls, etc).
+        </div>
+      </div>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

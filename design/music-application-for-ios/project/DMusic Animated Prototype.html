@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMusic — Animated Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Archivo+Black&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #0f0f14; overflow: hidden; height: 100%; }
+  #root { height: 100vh; }
+  * { box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="animations.jsx"></script>
+<script type="text/babel" src="components/ios-frame.jsx"></script>
+<script type="text/babel" src="components/direction-b-deep.jsx"></script>
+<script type="text/babel" src="components/direction-b-extra.jsx"></script>
+
+<script type="text/babel">
+const TWEAKS = /*EDITMODE-BEGIN*/{ "palette": "crimsonNight" }/*EDITMODE-END*/;
+const P = BD_PALETTES[TWEAKS.palette] || BD_PALETTES.crimsonNight;
+
+// Wrapper: position a full app-screen inside the 390x844 iPhone canvas.
+function ScreenLayer({ x = 0, y = 0, opacity = 1, scale = 1, dark = false, children }) {
+  return (
+    <div style={{
+      position: 'absolute',
+      left: 35, top: 20,       // inside bezel
+      width: 390, height: 844,
+      borderRadius: 50, overflow: 'hidden',
+      transform: `translate3d(${x}px, ${y}px, 0) scale(${scale})`,
+      transformOrigin: 'center',
+      opacity,
+      background: dark ? P.bgDark : P.bg,
+      willChange: 'transform, opacity',
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// Phone bezel SVG
+function Bezel() {
+  return (
+    <div style={{
+      position: 'absolute', left: 25, top: 10,
+      width: 410, height: 864,
+      borderRadius: 60,
+      background: '#0f0f14',
+      boxShadow: '0 30px 90px rgba(0,0,0,0.6), inset 0 0 0 2px #1d1d22',
+      pointerEvents: 'none',
+    }}/>
+  );
+}
+
+function Notch() {
+  return (
+    <div style={{
+      position: 'absolute', left: '50%', top: 30,
+      transform: 'translateX(-50%)',
+      width: 110, height: 34, borderRadius: 999,
+      background: '#000', zIndex: 20,
+    }}/>
+  );
+}
+
+// ── Scene 1: Onboarding step 1→2→3 with slide transitions ──
+function OnboardingScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime, duration }) => {
+        // 3 steps across this window, each ~duration/3
+        const step = Math.min(2, Math.floor(localTime / (duration / 3)));
+        const stepT = (localTime % (duration / 3)) / (duration / 3);
+        // Slide-in from right in first 0.35s of each step
+        const slideIn = stepT < 0.35 ? (1 - Easing.easeOutCubic(stepT / 0.35)) * 60 : 0;
+        return (
+          <ScreenLayer dark x={slideIn}>
+            <Onboarding palette={P} dark={true} step={step + 1}/>
+          </ScreenLayer>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene 2: Library fades in + pull-up ──
+function LibraryScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime }) => {
+        const o = Easing.easeOutCubic(Math.min(1, localTime / 0.5));
+        const y = (1 - o) * 80;
+        return (
+          <ScreenLayer dark opacity={o} y={y}>
+            <Library palette={P} dark={true}/>
+          </ScreenLayer>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene 3: Tap row → player expands from mini-player ──
+function PlayerExpandScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime, duration }) => {
+        // Phase 1 (0→0.8s): library still visible, player slides up over it
+        // Phase 2 (hold)
+        // Phase 3 (last 0.6s): player stays, subtle
+        const up = Easing.easeInOutCubic(Math.min(1, localTime / 0.8));
+        const yLib = -up * 40;
+        const yPlay = (1 - up) * 844;
+        return (
+          <>
+            <ScreenLayer dark y={yLib} opacity={1 - up * 0.5}>
+              <Library palette={P} dark={true}/>
+            </ScreenLayer>
+            <ScreenLayer dark y={yPlay}>
+              <Player palette={P} dark={true}/>
+            </ScreenLayer>
+          </>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene 4: Swipe between tracks on player ──
+function SwipeScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime }) => {
+        // simulate a swipe: cover slides left, next slides in
+        const t = Math.min(1, localTime / 1.2);
+        const eased = Easing.easeInOutCubic(t);
+        const dx = -eased * 260;
+        return (
+          <ScreenLayer dark>
+            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+              <div style={{ transform: `translateX(${dx}px)`, transition: 'none' }}>
+                <Player palette={P} dark={true}/>
+              </div>
+              {/* hint overlay */}
+              <div style={{
+                position: 'absolute', top: 240, left: 0, right: 0,
+                textAlign: 'center',
+                fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+                color: P.accent, letterSpacing: 2, opacity: 1 - eased,
+              }}>← SWIPE</div>
+            </div>
+          </ScreenLayer>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene 5: Player minimizes to mini, then links screen ──
+function CollapseToLinksScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime, duration }) => {
+        const down = Easing.easeInOutCubic(Math.min(1, localTime / 0.8));
+        const yPlay = down * 844;
+        const yLinks = (1 - down) * 80;
+        const oLinks = down;
+        return (
+          <>
+            <ScreenLayer dark opacity={oLinks} y={yLinks}>
+              <LinksScreen palette={P} dark={true}/>
+            </ScreenLayer>
+            <ScreenLayer dark y={yPlay}>
+              <Player palette={P} dark={true}/>
+            </ScreenLayer>
+          </>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene 6: Links screen — typing animation in URL field ──
+function LinksTypingScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime }) => {
+        const full = 'example.com/mix-2024.mp3';
+        const chars = Math.min(full.length, Math.floor(localTime * 10));
+        const typed = full.slice(0, chars);
+        return (
+          <ScreenLayer dark>
+            <LinksScreen palette={P} dark={true}/>
+            {/* overlay the URL field with typed text */}
+            <div style={{
+              position: 'absolute', top: 260, left: 20, right: 20,
+              display: 'flex', alignItems: 'center', gap: 10,
+              fontFamily: '"JetBrains Mono", monospace', fontSize: 12,
+              background: P.surfaceDark, borderRadius: 18, padding: 14,
+              border: `2px dashed ${P.accent}`,
+              color: P.inkLight,
+            }}>
+              <span style={{ opacity: 0.55 }}>https://</span>
+              <span>{typed}</span>
+              <span style={{
+                width: 2, height: 14, background: P.accent,
+                opacity: Math.floor(localTime * 2) % 2 === 0 ? 1 : 0,
+              }}/>
+            </div>
+          </ScreenLayer>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene 7: Lock screen with pulsing equalizer ──
+function LockScene({ start, end }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime }) => {
+        const o = Easing.easeOutCubic(Math.min(1, localTime / 0.5));
+        return (
+          <ScreenLayer dark opacity={o}>
+            <LockScreen palette={P}/>
+          </ScreenLayer>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Scene labels ──
+function SceneLabel({ start, end, text, sub }) {
+  return (
+    <Sprite start={start} end={end}>
+      {({ localTime, duration }) => {
+        const fadeIn = Math.min(1, localTime / 0.3);
+        const fadeOut = localTime > duration - 0.3 ? 1 - (localTime - (duration - 0.3)) / 0.3 : 1;
+        const o = Math.min(fadeIn, fadeOut);
+        return (
+          <div style={{
+            position: 'absolute', bottom: 40, left: 0, right: 0,
+            textAlign: 'center', opacity: o, zIndex: 100,
+            pointerEvents: 'none',
+          }}>
+            <div style={{
+              display: 'inline-block',
+              background: 'rgba(0,0,0,0.75)',
+              backdropFilter: 'blur(12px)',
+              padding: '10px 18px', borderRadius: 999,
+              fontFamily: 'Inter, sans-serif', fontSize: 13, fontWeight: 600,
+              color: '#fff', letterSpacing: 0.3,
+            }}>
+              {text}
+              {sub && <span style={{ opacity: 0.6, marginLeft: 10, fontWeight: 400 }}>· {sub}</span>}
+            </div>
+          </div>
+        );
+      }}
+    </Sprite>
+  );
+}
+
+// ── Master composition ──
+function App() {
+  // Timeline plan (each range in seconds):
+  // 0-6    Onboarding (3 steps × 2s)
+  // 6-8.5  Library appears
+  // 8.5-11 Player expands
+  // 11-13  Swipe
+  // 13-16  Collapse to Links
+  // 16-20  Links typing
+  // 20-24  Lock screen
+
+  return (
+    <Stage
+      width={460} height={884}
+      duration={24}
+      background={P.bgDark}
+      persistKey="dmusic-anim"
+    >
+      <Bezel/>
+
+      <OnboardingScene start={0} end={6}/>
+      <LibraryScene start={6} end={8.5}/>
+      <PlayerExpandScene start={8.5} end={11}/>
+      <SwipeScene start={11} end={13}/>
+      <CollapseToLinksScene start={13} end={16}/>
+      <LinksTypingScene start={16} end={20}/>
+      <LockScene start={20} end={24}/>
+
+      <Notch/>
+
+      <SceneLabel start={0} end={6} text="01 · Onboarding" sub="3 étapes"/>
+      <SceneLabel start={6} end={8.5} text="02 · Library" sub="fade + pull up"/>
+      <SceneLabel start={8.5} end={11} text="03 · Tap → Player" sub="expand from mini"/>
+      <SceneLabel start={11} end={13} text="04 · Swipe" sub="change de piste"/>
+      <SceneLabel start={13} end={16} text="05 · → Links" sub="collapse + cross-fade"/>
+      <SceneLabel start={16} end={20} text="06 · Paste URL" sub="typing"/>
+      <SceneLabel start={20} end={24} text="07 · Lock Screen" sub="widget + transport"/>
+    </Stage>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
