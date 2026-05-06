@@ -1,9 +1,9 @@
 # DMusic
 
 <p align="center">
-  <img src="./assets/icon-crimson.png" width="160" alt="Crimson Night icon" />
+  <img src="./assets/icon-crimson-readme.png" width="160" alt="Crimson Night icon" />
   &nbsp;&nbsp;&nbsp;
-  <img src="./assets/icon-violet.png" width="160" alt="Violet Dusk icon" />
+  <img src="./assets/icon-violet-readme.png" width="160" alt="Violet Dusk icon" />
 </p>
 
 <p align="center">
