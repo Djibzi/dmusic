@@ -1,13 +1,18 @@
 # DMusic
 
-App musique iOS native avec Live Activity custom au design glassmorphism.
-Lit des fichiers audio locaux et streame depuis n'importe quelle URL YouTube/SoundCloud
-via un backend yt-dlp en local. Deux thèmes, icône d'app dynamique selon le thème,
-controles lock screen entièrement custom (pas de player Apple).
+<p align="center">
+  <img src="./assets/icon-crimson.png" width="160" alt="Crimson Night icon" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="./assets/icon-violet.png" width="160" alt="Violet Dusk icon" />
+</p>
 
-| Crimson Night | Violet Dusk |
-|---|---|
-| Rouge profond, accent `#ad2831` | Violet nuit, accent `#a149e0` |
+<p align="center">
+  <em>App musique iOS native avec Live Activity custom au design glassmorphism.</em>
+</p>
+
+Lit des fichiers audio locaux et streame depuis n'importe quelle URL YouTube/SoundCloud
+via un backend yt-dlp en local. Deux thèmes (Crimson Night / Violet Dusk), icône d'app
+dynamique selon le thème, controles lock screen entièrement custom (pas de player Apple).
 
 ## Fonctionnalités
 
@@ -20,7 +25,8 @@ controles lock screen entièrement custom (pas de player Apple).
   via App Intents (iOS 17+). Aucune dépendance au lecteur Apple standard.
 - **Alternate app icons** — l'icône de l'app sur l'écran d'accueil change quand
   tu switches de palette dans les Settings
-- **Thèmes** — Crimson Night (rouge) / Violet Dusk (violet), persistés en SQLite
+- **Thèmes** — Crimson Night (rouge `#ad2831`) / Violet Dusk (violet `#a149e0`),
+  persistés en SQLite
 - **Background audio** — `react-native-track-player` avec capabilities vidées
   pour qu'aucun control system Apple ne s'affiche
 
@@ -75,49 +81,103 @@ plugins/withAlternateIcons.js     config plugin custom (alternate app icons)
 backend/                          FastAPI + yt-dlp
 ```
 
-## Setup
+## Installation
 
-### Frontend
+Tutoriel pas à pas pour faire tourner DMusic sur ton iPhone.
+
+### Prérequis
+
+- **Node.js 20+** et **npm**
+- **Python 3.11+** (pour le backend)
+- **Compte Apple Developer** (gratuit suffit pour un dev build sur ton propre iPhone)
+- **iPhone iOS 17+** (App Intents requis pour les boutons Live Activity)
+- Pas besoin de Mac/Xcode — le build se fait dans le cloud via EAS
+
+### 1. Cloner le repo
+
+```bash
+git clone https://github.com/Djibzi/dmusic.git
+cd dmusic
+```
+
+### 2. Installer les dépendances frontend
 
 ```bash
 npm install
-npx expo start
 ```
 
 Sur Windows, le `.npmrc` à la racine active `legacy-peer-deps=true` pour gérer
-les conflits de peer deps avec RNTP/Reanimated.
+les conflits de peer deps avec RNTP/Reanimated. Sinon ajoute le flag manuellement.
 
-### Backend (mode lien)
+### 3. Lancer le backend yt-dlp (mode lien)
+
+Dans un terminal séparé :
 
 ```bash
 cd backend
 python -m venv .venv
-.venv\Scripts\activate          # Windows
+# Windows :
+.venv\Scripts\activate
+# macOS/Linux :
+source .venv/bin/activate
+
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8787
 ```
 
-L'app pointe par défaut vers `http://192.168.1.180:8787` — adapte
-[src/services/Extractor.ts](src/services/Extractor.ts) à ton IP locale.
+Le backend tourne maintenant sur `http://<ton-ip-locale>:8787`. Trouve ton IP avec
+`ipconfig` (Windows) ou `ifconfig` (macOS/Linux), par exemple `192.168.1.42`.
 
-### Build iOS (EAS)
+### 4. Pointer l'app vers le backend
 
-Pas de Xcode local nécessaire (dev sur Windows).
+Édite [src/services/Extractor.ts](src/services/Extractor.ts) et remplace l'IP par
+défaut par celle de ta machine. Ton iPhone et ton ordi doivent être sur le même WiFi.
+
+### 5. Setup Apple Developer (côté Apple)
+
+Sur le portail [developer.apple.com](https://developer.apple.com) :
+
+1. Créer un App Group : `group.com.dmusic.app`
+2. Créer deux App IDs et y associer le group :
+   - `com.dmusic.app` (app principale)
+   - `com.dmusic.app.widget` (widget extension)
+3. Activer le capability **Live Activities** dans l'App ID de l'app principale
+
+(Si tu utilises un bundle ID différent, change-le dans [app.json](app.json) et
+[targets/dmusicwidget/expo-target.config.js](targets/dmusicwidget/expo-target.config.js).)
+
+### 6. Installer EAS CLI et se connecter
 
 ```bash
-npm i -g eas-cli
+npm install -g eas-cli
 eas login
+```
+
+### 7. Build le dev client iOS
+
+```bash
 eas build --platform ios --profile development
 ```
 
-Profile `development` = dev client avec Metro bundler en mode debug.
-L'archive `.ipa` est installée via TestFlight ou install link.
+Le build prend ~15min sur les serveurs Expo. Une fois prêt, EAS te donne un lien
+d'installation (ou un QR code) — ouvre-le sur ton iPhone, accepte le profil de
+provisioning dans Réglages → Général → VPN et gestion de l'appareil, et l'app
+s'installe.
 
-Prérequis Apple Developer :
-- App Group `group.com.dmusic.app` créé et associé aux deux bundle IDs
-  (`com.dmusic.app` et `com.dmusic.app.widget`)
-- Live Activities entitlement (auto via `NSSupportsLiveActivities` dans Info.plist)
-- Deployment target iOS 17.0 (App Intents pour les boutons Live Activity)
+### 8. Lancer Metro
+
+Dans le dossier du projet :
+
+```bash
+npx expo start --dev-client
+```
+
+Ouvre l'app sur ton iPhone — elle se connecte automatiquement à Metro et
+recharge le JS sans rebuild natif. Tu peux maintenant éditer le code TS et
+voir les changements instantanément.
+
+> **Note** : un nouveau dev build EAS n'est nécessaire que si tu modifies du code
+> natif Swift, le `app.json`, ou les configs de plugin.
 
 ## Architecture Live Activity
 
@@ -155,9 +215,3 @@ screen — elle apparaîtrait au-dessus de notre Live Activity sinon.
   et on configure un `staleDate` à 30s comme fallback.
 - **Backend en local uniquement** — yt-dlp bouge trop souvent pour déployer en
   prod sans CI de mise à jour. Le déploiement Fly.io est documenté mais pas actif.
-
-## Conception
-
-Design Live Activity dans [design/design_handoff_live_activity/](design/design_handoff_live_activity/).
-Icônes (Crimson + Violet) extraites de `design/DMusic Icons.pdf` via PyMuPDF
-(non commité).
