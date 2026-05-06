@@ -5,6 +5,9 @@ from pydantic import BaseModel
 import yt_dlp
 import httpx
 import time
+import subprocess
+import shutil
+import numpy as np
 from threading import Lock
 
 app = FastAPI(title="DMusic Extractor")
@@ -139,6 +142,110 @@ def health():
     return {"ok": True}
 
 
+# Envelope cache — stores RMS arrays keyed by original URL
+_envelope_cache: dict[str, tuple[float, list[float]]] = {}
+_envelope_cache_lock = Lock()
+ENVELOPE_SAMPLES_PER_SEC = 20
+
+
+def _envelope_cache_get(key: str):
+    with _envelope_cache_lock:
+        item = _envelope_cache.get(key)
+        if not item:
+            return None
+        ts, val = item
+        if time.time() - ts > _CACHE_TTL:
+            _envelope_cache.pop(key, None)
+            return None
+        return val
+
+
+def _envelope_cache_put(key: str, val: list[float]):
+    with _envelope_cache_lock:
+        if len(_envelope_cache) >= _CACHE_MAX:
+            oldest = min(_envelope_cache.items(), key=lambda kv: kv[1][0])[0]
+            _envelope_cache.pop(oldest, None)
+        _envelope_cache[key] = (time.time(), val)
+
+
+def _compute_rms_envelope(stream_url: str, samples_per_sec: int = ENVELOPE_SAMPLES_PER_SEC) -> list[float]:
+    """Decode audio via ffmpeg (mono, 8kHz, 16-bit PCM) and return RMS amplitude per
+    1/samples_per_sec window, normalized to [0, 1].
+    Cheap because we use 8kHz mono — RMS doesn't need full quality."""
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg not found on PATH")
+
+    cmd = [
+        "ffmpeg",
+        "-i", stream_url,
+        "-f", "s16le",
+        "-ac", "1",
+        "-ar", "8000",
+        "-loglevel", "error",
+        "-",
+    ]
+    proc = subprocess.run(cmd, capture_output=True, timeout=120)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {proc.stderr.decode()[:200]}")
+
+    pcm = np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+    if pcm.size == 0:
+        return []
+
+    sample_rate = 8000
+    frame_size = max(1, sample_rate // samples_per_sec)
+    n_frames = pcm.size // frame_size
+    if n_frames == 0:
+        return []
+    pcm = pcm[: n_frames * frame_size].reshape(n_frames, frame_size)
+    rms = np.sqrt(np.mean(pcm ** 2, axis=1))
+    if rms.max() > 0:
+        rms = rms / rms.max()
+    # Slight gamma to make the dynamic range pop visually
+    rms = np.power(rms, 0.7)
+    return rms.tolist()
+
+
+def _resolve_stream_url(url: str) -> str:
+    """Get a direct stream URL for an input URL (using yt-dlp if needed). Reuses /resolve cache."""
+    cached = _cache_get(f"{url}|proxy=0")
+    if cached is not None:
+        return cached.url
+    try:
+        with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
+            info = ydl.extract_info(url, download=False)
+        chosen = pick_ios_friendly(info)
+        stream_url = (chosen or {}).get("url") or info.get("url")
+        if not stream_url:
+            raise RuntimeError("no playable stream")
+        return stream_url
+    except Exception as e:
+        raise RuntimeError(f"resolve failed: {e}")
+
+
+@app.get("/envelope")
+def envelope(url: str = Query(...)):
+    """Return RMS amplitude envelope of the audio at `url`, sampled at
+    ENVELOPE_SAMPLES_PER_SEC Hz, normalized to [0, 1]."""
+    cached = _envelope_cache_get(url)
+    if cached is not None:
+        print(f"[envelope] CACHE HIT {url}")
+        return {"envelope": cached, "samples_per_sec": ENVELOPE_SAMPLES_PER_SEC}
+
+    t0 = time.time()
+    print(f"[envelope] START {url}")
+    try:
+        stream_url = _resolve_stream_url(url)
+        env = _compute_rms_envelope(stream_url)
+    except Exception as e:
+        print(f"[envelope] FAIL after {time.time()-t0:.1f}s : {e}")
+        raise HTTPException(status_code=422, detail=f"envelope failed: {e}")
+
+    print(f"[envelope] computed {len(env)} samples in {time.time()-t0:.1f}s")
+    _envelope_cache_put(url, env)
+    return {"envelope": env, "samples_per_sec": ENVELOPE_SAMPLES_PER_SEC}
+
+
 @app.get("/resolve", response_model=Resolved)
 def resolve(request: Request, url: str = Query(...), proxy: bool = Query(True)):
     cache_key = f"{url}|proxy={1 if proxy else 0}"
@@ -218,12 +325,23 @@ def resolve(request: Request, url: str = Query(...), proxy: bool = Query(True)):
         base = str(request.base_url).rstrip("/")
         stream_url = f"{base}/stream?url={_q(stream_url)}"
 
+    # YouTube thumbnails:
+    #  - maxresdefault.jpg: highest res but returns gray placeholder when missing
+    #  - sddefault.jpg / hqdefault.jpg: 4:3 with black letterbox bars baked into the image
+    #  - mqdefault.jpg: 320x180, true 16:9, always exists, no bars — reliable choice
+    thumb = info.get("thumbnail")
+    if thumb and "i.ytimg.com" in thumb:
+        for variant in ("maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg"):
+            if variant in thumb:
+                thumb = thumb.replace(variant, "mqdefault.jpg")
+                break
+
     result = Resolved(
         url=stream_url,
         title=info.get("title") or "Unknown",
         artist=info.get("uploader") or info.get("channel") or info.get("extractor") or "Unknown",
         duration=info.get("duration"),
-        thumbnail=info.get("thumbnail"),
+        thumbnail=thumb,
         source=info.get("extractor_key") or info.get("extractor") or "unknown",
         original_url=url,
     )

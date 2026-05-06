@@ -1,5 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, Pressable, ScrollView } from 'react-native';
+import Animated, {
+  Easing as REasing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/theme/ThemeContext';
@@ -9,25 +16,54 @@ import { Icon } from '@/components/Icon';
 import { useSheet } from '@/components/Sheet';
 import { usePlayerStore } from '@/store/playerStore';
 
+function PulseBar({
+  phase,
+  offset,
+  base,
+  amplitude,
+}: {
+  phase: ReturnType<typeof useSharedValue<number>>;
+  offset: number;
+  base: number;
+  amplitude: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    const wave = 0.5 + 0.5 * Math.sin((phase.value + offset) * 2 * Math.PI);
+    return { height: base + wave * amplitude };
+  });
+  return (
+    <Animated.View
+      style={[
+        { width: 3, backgroundColor: '#fff', borderRadius: 1 },
+        style,
+      ]}
+    />
+  );
+}
+
 function PulseBars() {
-  const [tick, setTick] = useState(0);
+  const phase = useSharedValue(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 180);
-    return () => clearInterval(id);
-  }, []);
-  const seeds = [12, 6, 16, 4, 10];
+    phase.value = withRepeat(
+      withTiming(1, { duration: 1200, easing: REasing.linear }),
+      -1,
+      false
+    );
+  }, [phase]);
+
+  // 5 bars with phase offsets so they don't all peak at the same time
+  const bars = [
+    { offset: 0, base: 8, amplitude: 8 },
+    { offset: 0.18, base: 5, amplitude: 7 },
+    { offset: 0.42, base: 12, amplitude: 6 },
+    { offset: 0.66, base: 4, amplitude: 9 },
+    { offset: 0.85, base: 10, amplitude: 7 },
+  ];
+
   return (
     <View style={{ flexDirection: 'row', gap: 1.5, alignItems: 'flex-end', height: 20 }}>
-      {seeds.map((h, j) => (
-        <View
-          key={j}
-          style={{
-            width: 3,
-            height: h + ((tick + j) % 4) * 2,
-            backgroundColor: '#fff',
-            borderRadius: 1,
-          }}
-        />
+      {bars.map((b, j) => (
+        <PulseBar key={j} phase={phase} offset={b.offset} base={b.base} amplitude={b.amplitude} />
       ))}
     </View>
   );

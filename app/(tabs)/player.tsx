@@ -5,18 +5,144 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '@/theme/ThemeContext';
 import { FONTS } from '@/theme/fonts';
 import { Canvas, RoundedRect, BlurMask } from '@shopify/react-native-skia';
+import {
+  Easing as REasing,
+  useDerivedValue,
+  useFrameCallback,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { Cover } from '@/components/Cover';
 import { Icon } from '@/components/Icon';
 import { useSheet } from '@/components/Sheet';
 import { usePlayerStore } from '@/store/playerStore';
 
-// LampAura: chaque bord de la cover EST une lampe — Skia rend une RoundedRect en
-// stroke avec plusieurs blurs gaussiens superposés pour le bloom (le vrai filtre
-// CSS `blur(N)` qu'on ne peut pas faire en RN natif).
-const LAMP_PAD = 130; // canvas padding around cover so blur has room to bloom
-function LampAura({ size, color }: { size: number; color: string }) {
+// LampAura: glowing border around the cover, driven by the song's pre-computed
+// RMS envelope (when available) or by a synth fallback. Position is extrapolated
+// at 60fps via useFrameCallback so the lamp stays smooth between expo-av updates
+// (which arrive at ~5Hz only). Paused = invisible (amp gates everything).
+const LAMP_PAD = 180;
+function LampAura({
+  size,
+  color,
+  isPlaying,
+}: {
+  size: number;
+  color: string;
+  isPlaying: boolean;
+}) {
   const W = size + LAMP_PAD * 2;
   const COVER_RADIUS = 22;
+
+  const beatPhase = useSharedValue(0);
+  const subPhase = useSharedValue(0);
+  const amp = useSharedValue(0);
+
+  // Subscribe to envelope + position from the store
+  const envelopeArr = usePlayerStore((s) => s.envelope);
+  const samplesPerSec = usePlayerStore((s) => s.envelopeSamplesPerSec);
+  const positionMs = usePlayerStore((s) => s.positionMs);
+
+  // Worklet-accessible mirrors of the JS state
+  const envShared = useSharedValue<number[] | null>(null);
+  const samplesPerSecShared = useSharedValue(20);
+  const positionMsShared = useSharedValue(0);
+  const positionUpdatedAtShared = useSharedValue(0);
+  const isPlayingShared = useSharedValue(false);
+
+  useEffect(() => {
+    envShared.value = envelopeArr;
+  }, [envelopeArr, envShared]);
+
+  useEffect(() => {
+    samplesPerSecShared.value = samplesPerSec;
+  }, [samplesPerSec, samplesPerSecShared]);
+
+  useEffect(() => {
+    positionMsShared.value = positionMs;
+    positionUpdatedAtShared.value = Date.now();
+  }, [positionMs, positionMsShared, positionUpdatedAtShared]);
+
+  useEffect(() => {
+    isPlayingShared.value = isPlaying;
+  }, [isPlaying, isPlayingShared]);
+
+  // Per-frame clock — used as a dependency to force re-eval at 60fps
+  const frameTick = useSharedValue(0);
+  useFrameCallback((info) => {
+    frameTick.value = info.timestamp;
+  }, true);
+
+  useEffect(() => {
+    beatPhase.value = withRepeat(
+      withTiming(1, { duration: 970, easing: REasing.linear }),
+      -1,
+      false
+    );
+    subPhase.value = withRepeat(
+      withTiming(1, { duration: 1430, easing: REasing.linear }),
+      -1,
+      false
+    );
+  }, [beatPhase, subPhase]);
+
+  useEffect(() => {
+    amp.value = withTiming(isPlaying ? 1 : 0, {
+      duration: 500,
+      easing: REasing.inOut(REasing.cubic),
+    });
+  }, [isPlaying, amp]);
+
+  // Audio-reactive signal (0..1). Reads from RMS envelope if available, else falls
+  // back to the synth oscillators. Position is extrapolated based on Date.now()
+  // since the last positionMs update so we sample the envelope at 60fps.
+  const audioSignal = useDerivedValue(() => {
+    // Force re-eval each frame (DerivedValues only update when deps change)
+    const _ = frameTick.value;
+
+    const env = envShared.value;
+    if (env && env.length > 0) {
+      let pos = positionMsShared.value;
+      if (isPlayingShared.value) {
+        pos += Date.now() - positionUpdatedAtShared.value;
+      }
+      const idx = Math.floor((pos / 1000) * samplesPerSecShared.value);
+      const clamped = Math.max(0, Math.min(env.length - 1, idx));
+      return env[clamped] ?? 0;
+    }
+    // Synth fallback (no envelope yet — backend still computing, or local file)
+    const beat = 0.5 + 0.5 * Math.sin(beatPhase.value * 2 * Math.PI);
+    const sub = 0.5 + 0.5 * Math.sin(subPhase.value * 2 * Math.PI);
+    return 0.6 * beat + 0.4 * sub;
+  });
+
+  // 3 outer halos with radial fade-out via BlurMask style="outer" (gaussian envelope
+  // outside the stroke only, stroke itself invisible) → near cover = bright,
+  // farther = dim, then 0. Each layer's blur radius determines its reach.
+  // Far halo: widest reach, lowest peak (the diffuse outer glow)
+  const farOpacity = useDerivedValue(
+    () => amp.value * (0.05 + 0.55 * audioSignal.value)
+  );
+  const farBlur = useDerivedValue(() => 110 + 90 * audioSignal.value);
+
+  // Mid halo: medium reach
+  const midOpacity = useDerivedValue(
+    () => amp.value * (0.08 + 0.7 * audioSignal.value)
+  );
+  const midBlur = useDerivedValue(() => 60 + 60 * audioSignal.value);
+
+  // Near halo: tight, brightest near the cover edge
+  const nearOpacity = useDerivedValue(
+    () => amp.value * (0.1 + 0.75 * audioSignal.value)
+  );
+  const nearBlur = useDerivedValue(() => 25 + 35 * audioSignal.value);
+
+  // Filament: the sharp bright LED line right on the cover edge
+  const filamentOpacity = useDerivedValue(
+    () => amp.value * (0.3 + 0.7 * audioSignal.value)
+  );
+  const filamentBlur = useDerivedValue(() => 1 + 4 * audioSignal.value);
 
   return (
     <View
@@ -30,7 +156,7 @@ function LampAura({ size, color }: { size: number; color: string }) {
       }}
     >
       <Canvas style={{ width: W, height: W }}>
-        {/* Outer halo — wide, soft */}
+        {/* FAR halo — widest blur, drawn first (back-most) */}
         <RoundedRect
           x={LAMP_PAD}
           y={LAMP_PAD}
@@ -38,14 +164,14 @@ function LampAura({ size, color }: { size: number; color: string }) {
           height={size}
           r={COVER_RADIUS}
           color={color}
-          opacity={0.45}
+          opacity={farOpacity}
           style="stroke"
-          strokeWidth={10}
+          strokeWidth={3}
         >
-          <BlurMask blur={70} style="solid" />
+          <BlurMask blur={farBlur} style="outer" />
         </RoundedRect>
 
-        {/* Mid glow — tighter */}
+        {/* MID halo — medium blur */}
         <RoundedRect
           x={LAMP_PAD}
           y={LAMP_PAD}
@@ -53,14 +179,14 @@ function LampAura({ size, color }: { size: number; color: string }) {
           height={size}
           r={COVER_RADIUS}
           color={color}
-          opacity={0.7}
+          opacity={midOpacity}
           style="stroke"
-          strokeWidth={6}
+          strokeWidth={3}
         >
-          <BlurMask blur={28} style="solid" />
+          <BlurMask blur={midBlur} style="outer" />
         </RoundedRect>
 
-        {/* Sharp filament edge — the bright LED line on the cover border */}
+        {/* NEAR halo — tight blur, brightest near cover */}
         <RoundedRect
           x={LAMP_PAD}
           y={LAMP_PAD}
@@ -68,11 +194,26 @@ function LampAura({ size, color }: { size: number; color: string }) {
           height={size}
           r={COVER_RADIUS}
           color={color}
-          opacity={1}
+          opacity={nearOpacity}
+          style="stroke"
+          strokeWidth={3}
+        >
+          <BlurMask blur={nearBlur} style="outer" />
+        </RoundedRect>
+
+        {/* FILAMENT — the bright LED line ON the cover edge (style=solid keeps it sharp) */}
+        <RoundedRect
+          x={LAMP_PAD}
+          y={LAMP_PAD}
+          width={size}
+          height={size}
+          r={COVER_RADIUS}
+          color={color}
+          opacity={filamentOpacity}
           style="stroke"
           strokeWidth={2}
         >
-          <BlurMask blur={3} style="solid" />
+          <BlurMask blur={filamentBlur} style="solid" />
         </RoundedRect>
       </Canvas>
     </View>
@@ -265,24 +406,6 @@ export default function Player() {
   const toggleFavorite = usePlayerStore((s) => s.toggleFavorite);
   const isFavoriteTrack = usePlayerStore((s) => s.isFavoriteTrack);
   const t = currentTrack;
-  if (!t) {
-    return (
-      <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <Text style={{ fontFamily: FONTS.mono, fontSize: 11, color: c.muted, letterSpacing: 2 }}>
-          NOTHING PLAYING
-        </Text>
-        <Text style={{ fontFamily: FONTS.sans, fontSize: 14, color: c.muted, marginTop: 10, textAlign: 'center' }}>
-          Lance un titre depuis Library ou colle un lien.
-        </Text>
-        <Pressable
-          onPress={() => router.back()}
-          style={{ marginTop: 24, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, backgroundColor: palette.accent }}
-        >
-          <Text style={{ fontFamily: FONTS.sansSemi, color: '#fff' }}>Retour</Text>
-        </Pressable>
-      </View>
-    );
-  }
   const progress = durationMs > 0 ? positionMs / durationMs : 0;
 
   const SCREEN_W = Dimensions.get('window').width;
@@ -369,6 +492,26 @@ export default function Player() {
   ).current;
 
   const ui = useSheet();
+
+  // After all hooks: render the empty state if no track is loaded.
+  if (!t) {
+    return (
+      <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={{ fontFamily: FONTS.mono, fontSize: 11, color: c.muted, letterSpacing: 2 }}>
+          NOTHING PLAYING
+        </Text>
+        <Text style={{ fontFamily: FONTS.sans, fontSize: 14, color: c.muted, marginTop: 10, textAlign: 'center' }}>
+          Lance un titre depuis Library ou colle un lien.
+        </Text>
+        <Pressable
+          onPress={() => router.back()}
+          style={{ marginTop: 24, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999, backgroundColor: palette.accent }}
+        >
+          <Text style={{ fontFamily: FONTS.sansSemi, color: '#fff' }}>Retour</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   const openAddToPlaylist = () => {
     if (!t) return;
@@ -574,7 +717,7 @@ export default function Player() {
                     justifyContent: 'center',
                   }}
                 >
-                  <LampAura size={COVER_SIZE} color={palette.accent} />
+                  <LampAura size={COVER_SIZE} color={palette.accent} isPlaying={isPlaying} />
                   <View
                     style={{
                       borderRadius: 22,

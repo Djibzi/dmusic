@@ -122,6 +122,19 @@ export default function Library() {
               </Text>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <Pressable
+                  onPress={() => router.push('/settings')}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 999,
+                    backgroundColor: c.softFill,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon name="settings" size={16} color={c.fg} />
+                </Pressable>
+                <Pressable
                   onPress={() => router.push('/search')}
                   style={{
                     width: 36,

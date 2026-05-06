@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as AudioService from '@/services/AudioService';
 import * as Extractor from '@/services/Extractor';
 import * as Storage from '@/services/Storage';
+import * as LiveActivity from 'dmusic-activity';
 
 function trackKey(t: Track): string {
   return t.originalUrl || t.uri || t.id;
@@ -74,7 +75,13 @@ type PlayerState = {
   favorites: Track[];
   currentPlaylistId: string | null;
   playedHistory: Track[];
+  envelope: number[] | null;
+  envelopeSamplesPerSec: number;
+  accentHex: string;
+  accentSecondaryHex: string;
+  bgGlowHex: string;
 
+  setAccentColors: (accent: string, accent2: string, bgGlow: string) => void;
   playTrack: (t: Track, opts?: { keepPlaylist?: boolean; fromHistory?: boolean }) => Promise<void>;
   playFromUrl: (url: string, hue: number) => Promise<void>;
   toggle: () => Promise<void>;
@@ -128,9 +135,47 @@ let lastWasPlaying = false;
 let endWatchdog: ReturnType<typeof setTimeout> | null = null;
 let endWatchdogTrackId: string | null = null;
 let endWatchdogLastPos = 0;
+let lastActivityUpdate = 0;
+const ACTIVITY_UPDATE_MS = 250;
+
+function buildActivityState(args: {
+  track: Track;
+  positionMs: number;
+  durationMs: number;
+  isPlaying: boolean;
+  accentHex: string;
+  accentSecondaryHex: string;
+  bgGlowHex: string;
+}) {
+  const isLink = args.track.tag === 'LINK' || !!args.track.originalUrl;
+  return {
+    title: args.track.title,
+    artist: args.track.artist,
+    artworkURL: args.track.thumbnail ?? null,
+    positionMs: args.positionMs,
+    durationMs: args.durationMs || args.track.expectedDurationMs || 0,
+    isPlaying: args.isPlaying,
+    accentHex: args.accentHex,
+    accentSecondaryHex: args.accentSecondaryHex,
+    bgGlowHex: args.bgGlowHex,
+    artHue: args.track.hue ?? 12,
+    sourceIsLink: isLink,
+  };
+}
 
 export const usePlayerStore = create<PlayerState>((set, get) => {
   AudioService.onStatus((s) => get()._onStatus(s as any));
+
+  // React to user-tapped buttons in the iOS Live Activity widget
+  LiveActivity.addActionListener((action) => {
+    if (action.type === 'playPause') {
+      get().toggle().catch((e) => console.warn('[live-activity] toggle failed', e));
+    } else if (action.type === 'replay') {
+      get().seekFraction(0).catch((e) => console.warn('[live-activity] replay failed', e));
+    } else if (action.type === 'seek') {
+      get().seekFraction(action.position).catch((e) => console.warn('[live-activity] seek failed', e));
+    }
+  });
 
   return {
     currentTrack: null,
@@ -144,6 +189,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     favorites: [],
     currentPlaylistId: null,
     playedHistory: [],
+    envelope: null,
+    envelopeSamplesPerSec: 20,
+    accentHex: '#ad2831',
+    accentSecondaryHex: '#800e13',
+    bgGlowHex: '#640d14',
+
+    setAccentColors: (accent, accent2, bgGlow) => set({ accentHex: accent, accentSecondaryHex: accent2, bgGlowHex: bgGlow }),
 
     playTrack: async (t, opts) => {
       lastFinishedTrackId = null;
@@ -161,6 +213,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           set((s) => ({ playedHistory: [cur, ...s.playedHistory].slice(0, 50) }));
         }
       }
+      // Clear envelope from previous track
+      set({ envelope: null });
       const isLink = t.tag === 'LINK' || !!t.originalUrl;
       if (isLink) {
         let src = t.originalUrl;
@@ -177,12 +231,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const playable = resolveLocalUri(t.uri);
       if (playable) {
         try {
-          await AudioService.playUri(playable);
+          await AudioService.playUri(playable, {
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            artwork: t.thumbnail,
+            durationMs: t.expectedDurationMs,
+          });
         } catch (e) {
           console.warn('[play] failed', playable, e);
           set({ isPlaying: false });
         }
       }
+      lastActivityUpdate = Date.now();
+      LiveActivity.startActivity(
+        t.id,
+        buildActivityState({
+          track: t,
+          positionMs: 0,
+          durationMs: t.expectedDurationMs ?? 0,
+          isPlaying: true,
+          accentHex: get().accentHex,
+          accentSecondaryHex: get().accentSecondaryHex,
+          bgGlowHex: get().bgGlowHex,
+        })
+      );
     },
 
     playFromUrl: async (rawUrl, hue) => {
@@ -258,11 +331,48 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       }));
       Storage.upsertLinkHistory(historyItem).catch((e) => console.warn('[storage] link history', e));
       try {
-        await AudioService.playUri(streamUrl);
+        await AudioService.playUri(streamUrl, {
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          artwork: track.thumbnail,
+          durationMs: expectedDurationMs,
+        });
       } catch (e) {
         console.warn('[play] url failed', e);
         set({ isPlaying: false });
       }
+      lastActivityUpdate = Date.now();
+      LiveActivity.startActivity(
+        track.id,
+        buildActivityState({
+          track,
+          positionMs: 0,
+          durationMs: expectedDurationMs ?? 0,
+          isPlaying: true,
+          accentHex: get().accentHex,
+          accentSecondaryHex: get().accentSecondaryHex,
+          bgGlowHex: get().bgGlowHex,
+        })
+      );
+      // Fire-and-forget: fetch RMS envelope so LampAura can react to actual song dynamics.
+      // Captures `track.id` so a track change while computing aborts the apply.
+      const targetId = track.id;
+      console.log('[envelope] requesting for', url);
+      Extractor.fetchEnvelope(url)
+        .then((env) => {
+          if (!env) {
+            console.warn('[envelope] backend returned null');
+            return;
+          }
+          if (get().currentTrack?.id !== targetId) {
+            console.log('[envelope] track changed, dropping result');
+            return;
+          }
+          console.log('[envelope] applied', env.envelope.length, 'samples @', env.samples_per_sec, 'Hz');
+          set({ envelope: env.envelope, envelopeSamplesPerSec: env.samples_per_sec });
+        })
+        .catch((e) => console.warn('[envelope] fetch failed', e));
     },
 
     toggle: async () => {
@@ -422,6 +532,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       try {
         await AudioService.stop();
       } catch {}
+      LiveActivity.endActivity();
       set({ currentTrack: null, isPlaying: false, positionMs: 0, durationMs: 0, queue: [], currentPlaylistId: null });
     },
 
@@ -495,6 +606,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         isPlaying: s.isPlaying,
       });
 
+      // Live Activity: throttle position updates, force on play/pause transition
+      const playStateChanged = lastWasPlaying !== s.isPlaying;
+      const nowMs = Date.now();
+      if (cur && (nowMs - lastActivityUpdate >= ACTIVITY_UPDATE_MS || playStateChanged)) {
+        lastActivityUpdate = nowMs;
+        const stateNow = get();
+        LiveActivity.updateActivity(
+          buildActivityState({
+            track: cur,
+            positionMs: pos,
+            durationMs: dur,
+            isPlaying: s.isPlaying,
+            accentHex: stateNow.accentHex,
+            accentSecondaryHex: stateNow.accentSecondaryHex,
+            bgGlowHex: stateNow.bgGlowHex,
+          })
+        );
+      }
+
       // Watchdog: schedule once per track at (duration - position + buffer). Reschedule only
       // on track change OR when a seek is detected (position jumped vs the last natural advance).
       const trackId = cur?.id ?? null;
@@ -521,12 +651,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
               get().playTrack(next, { keepPlaylist: true });
             } else {
               const plId = get().currentPlaylistId;
-              if (plId) {
-                const p = get().playlists.find((x) => x.id === plId);
-                if (p && p.tracks.length) {
-                  set({ queue: p.tracks.slice(1) });
-                  get().playTrack(p.tracks[0], { keepPlaylist: true });
-                }
+              const p = plId ? get().playlists.find((x) => x.id === plId) : null;
+              if (p && p.tracks.length) {
+                set({ queue: p.tracks.slice(1) });
+                get().playTrack(p.tracks[0], { keepPlaylist: true });
+              } else {
+                // Nothing to play next — clear state, end Live Activity, hide MiniPlayer.
+                set({ isPlaying: false, positionMs: 0, currentTrack: null });
+                LiveActivity.endActivity();
               }
             }
           }, remaining + 2000);
@@ -567,7 +699,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
               return;
             }
           }
-          set({ isPlaying: false, positionMs: 0 });
+          set({ isPlaying: false, positionMs: 0, currentTrack: null });
+          LiveActivity.endActivity();
         }
       }
     },

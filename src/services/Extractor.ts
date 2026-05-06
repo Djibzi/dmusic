@@ -64,3 +64,18 @@ export async function resolve(url: string): Promise<Resolved> {
   }
   return (await res.json()) as Resolved;
 }
+
+export type Envelope = { envelope: number[]; samples_per_sec: number };
+
+export async function fetchEnvelope(url: string): Promise<Envelope | null> {
+  const base = getBaseUrl();
+  const endpoint = `${base}/envelope?url=${encodeURIComponent(url)}`;
+  try {
+    const res = await fetch(endpoint);
+    if (!res.ok) return null;
+    return (await res.json()) as Envelope;
+  } catch (e) {
+    console.warn('[extractor] envelope fetch failed', e);
+    return null;
+  }
+}

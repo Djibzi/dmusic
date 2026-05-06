@@ -50,6 +50,14 @@ export const PALETTES: Record<Palette['key'], Palette> = {
   },
 };
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export function resolve(p: Palette, dark: boolean) {
   return {
     bg: dark ? p.bgDark : p.bg,
@@ -60,7 +68,8 @@ export function resolve(p: Palette, dark: boolean) {
     chipBorder: dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
     softFill: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
     softFillAlt: dark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
-    overlay: dark ? 'rgba(26,5,3,0.7)' : 'rgba(255,255,255,0.7)',
-    miniOverlay: dark ? 'rgba(42,10,10,0.75)' : 'rgba(255,255,255,0.82)',
+    // Derived from palette so dark-mode overlays are purple in violetDusk, red in crimsonNight, etc.
+    overlay: dark ? hexToRgba(p.bgDark, 0.7) : 'rgba(255,255,255,0.7)',
+    miniOverlay: dark ? hexToRgba(p.surfaceDark, 0.75) : 'rgba(255,255,255,0.82)',
   };
 }

@@ -105,12 +105,17 @@ export default function Onboarding() {
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
+            zIndex: 10,
           }}
         >
           <Text style={{ fontFamily: FONTS.display, fontSize: 20, letterSpacing: -0.5, color: c.fg }}>
             DMUSIC
           </Text>
-          <Pressable onPress={() => router.replace('/(tabs)/library')}>
+          <Pressable
+            onPress={() => router.replace('/(tabs)/library')}
+            hitSlop={{ top: 16, right: 24, bottom: 16, left: 24 }}
+            style={{ paddingVertical: 6, paddingLeft: 16 }}
+          >
             <Text
               style={{
                 fontFamily: FONTS.mono,
@@ -173,14 +178,15 @@ export default function Onboarding() {
           </Text>
         </Animated.View>
 
-        {/* Tap zones — left = prev, right = next */}
+        {/* Tap zones — left = prev, right = next.
+            top:120 leaves clear space for the header (SKIP must remain tappable). */}
         <Pressable
           onPress={goPrev}
-          style={{ position: 'absolute', top: 60, bottom: 180, left: 0, width: '50%' }}
+          style={{ position: 'absolute', top: 120, bottom: 180, left: 0, width: '50%', zIndex: 1 }}
         />
         <Pressable
           onPress={goNext}
-          style={{ position: 'absolute', top: 60, bottom: 180, right: 0, width: '50%' }}
+          style={{ position: 'absolute', top: 120, bottom: 180, right: 0, width: '50%', zIndex: 1 }}
         />
 
         {/* Progress dots */}

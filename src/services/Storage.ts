@@ -51,6 +51,10 @@ function getDb(): Promise<SQLite.SQLiteDatabase> {
           track_json TEXT NOT NULL,
           added_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS app_settings (
+          key TEXT PRIMARY KEY NOT NULL,
+          value TEXT NOT NULL
+        );
       `);
       // Migration: add duration_ms column to link_history if missing
       try {
@@ -241,6 +245,20 @@ export async function upsertLinkHistory(item: LinkHistoryItem): Promise<void> {
   await db.runAsync(
     `DELETE FROM link_history WHERE id NOT IN
      (SELECT id FROM link_history ORDER BY played_at DESC LIMIT 20)`
+  );
+}
+
+export async function loadSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<any>('SELECT value FROM app_settings WHERE key = ?', [key]);
+  return row?.value ?? null;
+}
+
+export async function saveSetting(key: string, value: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)`,
+    [key, value]
   );
 }
 
